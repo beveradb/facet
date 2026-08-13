@@ -7,6 +7,7 @@ the feature generic (no GPS / no captions / single contributor / missing dates).
 # ruff: noqa: DTZ001, C408
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timedelta
 
@@ -23,10 +24,11 @@ from curator.emit import write_contact_sheet
 from curator.exporter import export_album
 from curator.geocode import assign_contributors, assign_locations
 from curator.rank import photo_score, pick_bucket
-from curator.select import CurationResult, _coverage_pass
+from curator.select import CurationResult, _coverage_pass, _enforce_video_cap
 from curator.video import (
     discover_videos,
     keyframe_times,
+    load_video_candidates,
     video_id_from_frame,
     write_video_picker,
 )
@@ -304,6 +306,55 @@ def test_discover_videos_excludes_live_photo_companions(tmp_path):
     (tmp_path / "clip.mp4").write_bytes(b"x")      # standalone -> kept
     names = {v.filename for v in discover_videos(str(tmp_path))}
     assert names == {"clip.mp4"}
+
+
+def test_load_video_candidates(tmp_path):
+    vj = tmp_path / "v.json"
+    vj.write_text(json.dumps([{
+        "path": "/v/a.mp4", "filename": "a.mp4", "dt": "2026-07-24 22:00:00", "duration": 12.0,
+        "caption": "a crowd", "category": "concert", "moment": "nightlife",
+        "aggregate": 7.0, "aesthetic": 6.0, "mean_emb": [1.0, 0.0, 0.0]}]))
+    vids = load_video_candidates(str(vj))
+    assert len(vids) == 1
+    p = vids[0]
+    assert p.is_video and p.duration == 12.0 and p.path == "/v/a.mp4"
+    assert p.moment == "nightlife" and p.dt is not None and p.img_emb is not None
+
+
+def test_video_score_bonus_outranks_equal_still():
+    cfg = CuratorConfig(video_score_bonus=2.0)
+    still = mkphoto(0, aggregate=6, aesthetic=6, comp=6)
+    vid = mkphoto(1, aggregate=6, aesthetic=6, comp=6, is_video=True)
+    assert photo_score(vid, cfg) > photo_score(still, cfg)
+
+
+def test_enforce_video_cap_drops_extras_and_backfills():
+    cfg = CuratorConfig(video_max=1, video_score_bonus=0.0)
+    v_lo = mkphoto(0, aggregate=5, is_video=True)
+    v_hi = mkphoto(1, aggregate=7, is_video=True)
+    still = mkphoto(2, aggregate=6)
+    spare_still = mkphoto(3, aggregate=6.5)          # unselected, available to backfill
+    b = Bucket("d", "l", "e")
+    b.slots = [[v_lo], [v_hi], [still], [spare_still]]
+    result = CurationResult(selected=[v_lo, v_hi, still], buckets=[b], quotas={b.id: 3},
+                            persons={}, contributors={}, reference=None, locations={},
+                            undated=[], picks_by_bucket={b.id: [v_lo, v_hi, still]})
+    _enforce_video_cap(result, cfg)
+    vids = [p for p in result.selected if p.is_video]
+    assert len(vids) == 1 and v_hi in vids and v_lo not in result.selected  # kept the better clip
+    assert spare_still in result.selected                                    # backfilled with a still
+
+
+def test_curate_folds_in_video_candidates(tiny_db, tmp_path):
+    vj = tmp_path / "v.json"
+    vj.write_text(json.dumps([{
+        "path": "/v/clip.mp4", "filename": "clip.mp4", "dt": "2026-07-22 12:30:00", "duration": 10.0,
+        "caption": "x", "category": "concert", "moment": "other",
+        "aggregate": 9.0, "aesthetic": 8.0, "mean_emb": []}]))
+    result = curate(tiny_db, CuratorConfig(target_count=10, candidate_multiplier=1.0,
+                                           min_per_day=1, video_max=5), videos_json=str(vj))
+    assert "/v/clip.mp4" in {p.path for p in result.selected}     # strong clip auto-selected
+    assert any(p.is_video for p in result.selected)
 
 
 def test_write_video_picker_groups_by_day(tmp_path):

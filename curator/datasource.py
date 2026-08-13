@@ -65,6 +65,9 @@ class Photo:          # not another photo with equal field values (breaks the co
     img_emb: np.ndarray | None    # image embedding (visual near-duplicate dedup)
     camera: str | None
     persons: list[int] = field(default_factory=list)
+    # video candidates (9c): a synthetic Photo built from a clip's aggregated frames
+    is_video: bool = False
+    duration: float | None = None
     # enriched downstream:
     contributor: str = ""
     location: str | None = None

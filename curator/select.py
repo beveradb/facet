@@ -35,6 +35,9 @@ class CuratorConfig:
     penalty_blink: float = 3.0
     penalty_rejected: float = 5.0
     penalty_face: float = 1.0
+    # videos-as-candidates (9c)
+    video_score_bonus: float = 1.0   # a clip out-ranks a marginal still in its bucket
+    video_max: int = 15              # cap on AUTO-selected videos (user adds more in the UI)
     # coverage
     min_shots_per_person: int = 1
     min_face_quality: float = 6.0
@@ -123,7 +126,9 @@ def _coverage_pass(result: CurationResult, cfg: CuratorConfig) -> None:
             result.coverage_warnings.append(f"{name}: best swap cost {cost:.1f} exceeds budget")
 
 
-def curate(db_path: str, cfg: CuratorConfig | None = None) -> CurationResult:
+def curate(
+    db_path: str, cfg: CuratorConfig | None = None, videos_json: str | None = None
+) -> CurationResult:
     cfg = cfg or CuratorConfig()
     all_photos = load_photos(db_path)
     persons = load_persons(db_path)
@@ -133,6 +138,11 @@ def curate(db_path: str, cfg: CuratorConfig | None = None) -> CurationResult:
     n_junk = sum(1 for p in all_photos if p.is_junk)
     n_rejected = sum(1 for p in all_photos if p.is_rejected and not p.is_junk)
     photos = [p for p in all_photos if not p.is_junk and not p.is_rejected]
+
+    # 9c: fold video clips in as synthetic candidates so they compete for slots.
+    if videos_json:
+        from .video import load_video_candidates
+        photos = photos + load_video_candidates(videos_json)
 
     contributors, reference = geocode.assign_contributors(photos)
     locations = geocode.assign_locations(photos)
@@ -164,4 +174,45 @@ def curate(db_path: str, cfg: CuratorConfig | None = None) -> CurationResult:
         picks_by_bucket=picks_by_bucket,
     )
     _coverage_pass(result, cfg)
+    _enforce_video_cap(result, cfg)
     return result
+
+
+def _enforce_video_cap(result: CurationResult, cfg: CuratorConfig) -> None:
+    """Keep the auto-selection from being crowded by clips: if more than
+    `video_max` videos are selected, drop the lowest-scoring extras and backfill
+    their buckets with the best unselected still (the user can re-add clips in the
+    UI, where every clip is a candidate)."""
+    selected_videos = [p for p in result.selected if p.is_video]
+    if len(selected_videos) <= cfg.video_max:
+        return
+
+    photo_bucket = {id(p): b for b in result.buckets for slot in b.slots for p in slot}
+    selected = {id(p) for p in result.selected}
+
+    def best_still_backfill(bucket):
+        best = None
+        for slot in bucket.slots:
+            if any(id(p) in selected for p in slot):
+                continue  # scene already represented
+            stills = [p for p in slot if not p.is_video]
+            if not stills:
+                continue
+            rep = max(stills, key=lambda p: rank.photo_score(p, cfg))
+            if best is None or rank.photo_score(rep, cfg) > rank.photo_score(best, cfg):
+                best = rep
+        return best
+
+    drop = sorted(selected_videos, key=lambda p: rank.photo_score(p, cfg))
+    for v in drop[: len(selected_videos) - cfg.video_max]:
+        bucket = photo_bucket.get(id(v))
+        picks = result.picks_by_bucket.get(bucket.id, []) if bucket else []
+        if v in picks:
+            picks.remove(v)
+        result.selected.remove(v)
+        selected.discard(id(v))
+        backfill = best_still_backfill(bucket) if bucket else None
+        if backfill is not None:
+            picks.append(backfill)
+            result.selected.append(backfill)
+            selected.add(id(backfill))

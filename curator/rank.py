@@ -28,6 +28,8 @@ def photo_score(p: Photo, cfg) -> float:
         score -= cfg.penalty_rejected
     if has_face and (p.eyes_open < cfg.min_eyes_open or p.expression < 0.0):
         score -= cfg.penalty_face
+    if p.is_video:
+        score += cfg.video_score_bonus  # a clip is worth more than a single still
     return score
 
 

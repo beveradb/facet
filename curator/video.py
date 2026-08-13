@@ -193,6 +193,43 @@ def aggregate_summaries(frames_db: str, videos: list[VideoMeta]) -> list[VideoSu
     return sorted(out, key=lambda s: (s.day or "", s.dt or datetime.min))  # noqa: DTZ901
 
 
+def load_video_candidates(videos_json_path: str):
+    """Build synthetic Photo candidates from a videos.json (aggregate_summaries output),
+    so clips flow through the same selection pipeline as stills (roadmap 9c)."""
+    import json
+
+    import numpy as np
+
+    from .datasource import Photo
+
+    data = json.loads(Path(videos_json_path).read_text())
+    out = []
+    for s in data:
+        dt = None
+        if s.get("dt"):
+            try:
+                dt = datetime.fromisoformat(str(s["dt"]))
+            except ValueError:
+                dt = None
+        mean_emb = s.get("mean_emb") or []
+        img_emb = np.asarray(mean_emb, dtype=np.float32) if mean_emb else None
+        aes = float(s.get("aesthetic") or 0.0)
+        out.append(
+            Photo(
+                path=s["path"], filename=s.get("filename", ""), dt=dt,
+                lat=None, lon=None, category=s.get("category"),
+                aggregate=float(s.get("aggregate") or 0.0), aesthetic=aes, comp=aes,
+                face_quality=0.0, face_ratio=0.0, eyes_open=1.0, expression=0.5,
+                is_blink=0, is_rejected=0, is_junk=False, is_dup_lead=0,
+                duplicate_group_id=None, burst_group_id=None, phash=None,
+                caption=s.get("caption"), moment=s.get("moment") or "other", moment_conf=0.5,
+                emb=None, img_emb=img_emb, camera=None,
+                is_video=True, duration=s.get("duration"),
+            )
+        )
+    return out
+
+
 def _fmt_dur(sec: float) -> str:
     sec = int(sec)
     return f"{sec // 60}:{sec % 60:02d}" if sec >= 60 else f"{sec}s"

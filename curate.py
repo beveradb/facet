@@ -55,7 +55,7 @@ def _summary(result, cfg) -> dict:
 def cmd_run(args) -> int:
     cfg = load_config(args.config, target_count=args.target,
                       candidate_multiplier=args.multiplier, timezone=args.tz)
-    result = curate(args.db, cfg)
+    result = curate(args.db, cfg, videos_json=args.videos_json)
     summary = _summary(result, cfg)
 
     manifest = {
@@ -137,6 +137,8 @@ def main() -> int:
     r.add_argument("--tz", default=None,
                    help="reserved: cross-contributor tz normalization (v2); v1 buckets on EXIF-local date")
     r.add_argument("--out", default="candidates.json")
+    r.add_argument("--videos-json", default=None,
+                   help="videos.json from analyze_videos.py — folds clips in as candidates (9c)")
     r.add_argument("--contact-sheet", metavar="PATH", default=None,
                    help="write a self-contained HTML contact sheet of the candidates")
     r.add_argument("--write-album", metavar="NAME", default=None)
