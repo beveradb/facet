@@ -10,8 +10,8 @@ It is **not** a culling pass. Blur/blink/burst/aesthetic scoring (which facet
 already does) answer "is this photo good?". The curator answers the harder
 question: "which ~100 photos *together* represent this trip?"
 
-> Status: prototype (CLI + library). API route + gallery UI are planned; see
-> [Roadmap](#roadmap). Design rationale lives in
+> Status: CLI + library, plus an in-viewer **review UI** at `/curator`
+> (see [Review in the viewer](#review-in-the-viewer)). Design rationale lives in
 > [docs/superpowers/specs/2026-08-12-album-curator-design.md](superpowers/specs/2026-08-12-album-curator-design.md).
 
 ## How it works
@@ -67,7 +67,22 @@ python curate.py run --db library.db \
 python curate.py export --db library.db --album "Curated Candidates" --dest ./curated_out
 ```
 
-## Videos
+## Review in the viewer
+
+Instead of the contact sheet, review and hand-edit the selection interactively in
+the running viewer (`python viewer.py`) at **`/curator`**:
+
+- **Run** recomputes the candidate pool from the current library (a few seconds).
+- Candidates are shown **grouped by day → event**, the auto-**selected** items
+  ringed and checked, the not-selected ones dimmed — **tick/untick** any item
+  (click or space) to add/remove it, with a running **kept count vs target** and
+  per-day tallies in the sticky header.
+- **Save** writes the kept set as a facet album (default *"Curated Final"*),
+  openable in the gallery and ready for `curate.py export`.
+
+Edits persist across reloads (a `curator_selection` side table), so the review can
+be paused and resumed. Running and editing require **edition** access. Videos, once
+they enter the pool, appear inline with a duration badge and behave identically.
 
 facet is stills-only, so videos are handled separately. Each clip is
 **frame-sampled** (a few keyframes across its duration), those frames run through
@@ -120,8 +135,9 @@ derived at runtime.
 
 ## Roadmap
 
-- **API + gallery UI** — a "Curate" action and a review view (day/event columns,
-  quota fill, coverage warnings) reusing facet's keyboard-first reject + undo.
+- **Review UI polish** — the `/curator` review view ships (run/tick/save); still to
+  come are keyboard arrow-navigation across the grid, coverage-warning surfacing,
+  and quota-fill bars per bucket.
 - **Video** — frame-sample clips so they get their own quota (facet is stills-only
   today; the curator emits a separate video manifest in the meantime).
 - **Clock-skew correction** — detect and optionally correct contributors whose
