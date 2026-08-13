@@ -11,7 +11,10 @@ from .datasource import Photo, load_persons, load_photos
 class CuratorConfig:
     target_count: int = 100
     candidate_multiplier: float = 1.5
-    timezone: str = "Europe/Amsterdam"
+    # Reserved for v2 cross-contributor timezone normalization (tied to clock-skew
+    # detection). Unused in v1: bucketing runs on each photo's EXIF-local date, so
+    # there is deliberately no trip-specific timezone default.
+    timezone: str | None = None
     min_per_day: int = 2
     min_per_event: int = 1
     scene_gap_minutes: int = 45

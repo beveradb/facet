@@ -1,11 +1,50 @@
 # Album Curator — Design
 
 **Status:** Draft for review (written autonomously 2026-08-12; Andrew to review)
-**Feature:** Coverage-constrained narrative album curator built on `beveradb/facet`
+**Feature:** A reusable facet feature that curates *any* folder of media into a smaller, coverage-balanced album — validated on the Liquicity 2026 trip as the first fixture
 **Author:** Claude (brainstorming session)
 **Related:** `/Users/andrew/Downloads/ALBUM_CURATOR_BRIEF.md` (original brief)
 
 ---
+
+## 0. Product goal & genericity (the north star)
+
+The deliverable is a **reusable facet feature**: point it at *any* local folder
+of media and get a smaller, coverage-balanced curated album out — usable by
+Andrew and others on any album, and a candidate to contribute upstream to
+`ncoevoet/facet`. **Liquicity 2026 is the first fixture / proving ground, not the
+target.** Its specifics (a festival, Amsterdam, a Pixel-owning contributor) must
+never be hard-coded into the algorithm — they are either **auto-detected from the
+data** or **exposed as config**. Andrew has flagged keeping this in view as the
+priority even while we first prove feasibility on the one album.
+
+**Generic-by-design principles (hold the line on these):**
+- **No trip / place / person / device hard-coding.** Verified: the algorithm has
+  zero references to Liquicity/Amsterdam/festival/Pixel/place names. Reference
+  contributor, locations, days, events and persons are all derived at runtime.
+- **Everything tunable lives in the `curator` config block (§6)** with defaults
+  that work sight-unseen; a new album overrides only what it needs.
+- **Degrade gracefully — must produce a sensible album on plain holiday snaps.**
+  No GPS → day+gap+semantic bucketing only. No captions → skip semantic
+  merge/moments, fall back to score+time. One contributor → contributor logic is
+  a no-op. Missing dates → excluded with a warning.
+- **Input = any folder facet can scan → a facet DB.** The curator only *reads*
+  the DB, so it inherits facet's format support and is decoupled from how the
+  library was built. Output (candidates album + manifest + export folder) is
+  equally generic.
+
+| Looks trip-specific | How it's actually generic |
+|---|---|
+| Timezone `Europe/Amsterdam` | **Removed** — unused in v1 (buckets on EXIF-local date); cross-contributor tz normalization is a v2, config-driven + skew-detected concern, never a fixed default. |
+| "Pixel is the spine" | Reference contributor = the device with the most GPS, **auto-detected**. Any owner/device works; zero GPS → skipped entirely. |
+| Amsterdam → festival arc | Locations are reverse-geocoded from whatever GPS exists; place names are **data, not code**. |
+| 8-day festival timeline | Days/events derived from timestamps + gaps; works for a weekend or a month. |
+| Named crew | Person coverage reads facet's clusters; no persons → the pass is a no-op. |
+
+Liquicity-derived numbers throughout this doc (787 photos, 8 days, GPS split,
+etc.) are **illustrative of the fixture** for sanity-checking behavior — they are
+not requirements. Every section below should be read as "for an arbitrary
+album, using this album to make it concrete."
 
 ## 1. Problem & goal
 
@@ -119,8 +158,9 @@ gallery's keyboard-first reject + 7s-undo for the human cut to 100.
   it (and optionally apply if `curator.deskew.apply=true`, default false).
 
 ### 5.2 Bucketing — day → location → event
-1. **Day** = calendar date in `curator.timezone` (Europe/Amsterdam), from
-   `date_taken`. Primary narrative axis.
+1. **Day** = the calendar date of each photo's **EXIF-local `date_taken`** (v1;
+   no timezone conversion — see §0). Primary narrative axis. *(v2: optional
+   cross-contributor tz normalization once clock-skew detection lands.)*
 2. **Location split:** within a day, a change in assigned location (e.g.
    Amsterdam → Harenkarspel) is a hard event boundary.
 3. **Time-gap scenes:** within a (day, location), start a new scene when the gap
@@ -188,7 +228,7 @@ For each named person (rename step is a one-time human ~10 min) with fewer than
 "curator": {
   "target_count": 100,
   "candidate_multiplier": 1.5,
-  "timezone": "Europe/Amsterdam",
+  "timezone": null,
   "min_per_day": 2,
   "min_per_event": 1,
   "scene_gap_minutes": 45,

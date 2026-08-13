@@ -5,8 +5,11 @@ Reads a facet SQLite DB, runs the coverage-constrained selection pipeline, and
 emits a candidate set: a JSON manifest, a printed summary, and (optionally) a
 facet album written back into the DB.
 
-    python curate.py --db liquicity.db --target 100 --out candidates.json
-    python curate.py --db liquicity.db --write-album "Curated Candidates"
+    python curate.py --db photos.db --target 100 --out candidates.json
+    python curate.py --db photos.db --write-album "Curated Candidates"
+
+Works on any facet DB built from any folder of media — no trip-specific
+assumptions (see docs/superpowers/specs/2026-08-12-album-curator-design.md §0).
 """
 from __future__ import annotations
 
@@ -66,7 +69,8 @@ def main() -> int:
     ap.add_argument("--db", required=True)
     ap.add_argument("--target", type=int, default=100)
     ap.add_argument("--multiplier", type=float, default=1.5)
-    ap.add_argument("--tz", default="Europe/Amsterdam")
+    ap.add_argument("--tz", default=None,
+                    help="reserved: cross-contributor tz normalization (v2); v1 buckets on EXIF-local date")
     ap.add_argument("--out", default="candidates.json")
     ap.add_argument("--write-album", metavar="NAME", default=None)
     args = ap.parse_args()
