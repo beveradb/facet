@@ -24,6 +24,12 @@ from curator.exporter import export_album
 from curator.geocode import assign_contributors, assign_locations
 from curator.rank import photo_score, pick_bucket
 from curator.select import CurationResult, _coverage_pass
+from curator.video import (
+    discover_videos,
+    keyframe_times,
+    video_id_from_frame,
+    write_video_picker,
+)
 from curator.writeback import write_album
 
 BASE = datetime(2026, 7, 22, 12, 0, 0)
@@ -278,6 +284,38 @@ def test_single_contributor_and_no_embeddings_still_buckets():
     assert sum(len(b.slots) for b in buckets) == 3       # nothing crashes, all placed
 
 
+# ---------------------------------------------------------------- video
+
+def test_keyframe_times_spacing_and_short_clips():
+    t = keyframe_times(10, 5)
+    assert len(t) == 5 and t == sorted(t) and all(0 < x < 10 for x in t)
+    assert keyframe_times(0, 5) == [0.0]
+    assert len(keyframe_times(2, 5)) <= 3          # short clip -> fewer frames
+
+
+def test_video_id_from_frame():
+    assert video_id_from_frame("vid0007__f2.jpg") == 7
+    assert video_id_from_frame("IMG_1.jpg") is None
+
+
+def test_discover_videos_excludes_live_photo_companions(tmp_path):
+    (tmp_path / "IMG_1.heic").write_bytes(b"x")
+    (tmp_path / "IMG_1.mov").write_bytes(b"x")     # companion of the still -> excluded
+    (tmp_path / "clip.mp4").write_bytes(b"x")      # standalone -> kept
+    names = {v.filename for v in discover_videos(str(tmp_path))}
+    assert names == {"clip.mp4"}
+
+
+def test_write_video_picker_groups_by_day(tmp_path):
+    summaries = [{"day": "2026-07-24", "path": "/v/clip.mp4", "filename": "clip.mp4", "duration": 42,
+                  "category": "concert", "moment": "nightlife", "caption": "a crowd dancing",
+                  "best_frame": "/nonexistent.jpg"}]
+    out = tmp_path / "pick.html"
+    write_video_picker(summaries, str(out))
+    doc = out.read_text()
+    assert "clip.mp4" in doc and "2026-07-24" in doc and "data-path" in doc and "Download selection" in doc
+
+
 # ---------------------------------------------------------------- datasource + end-to-end
 
 @pytest.fixture
@@ -371,10 +409,12 @@ def test_export_album_copies_survivors_and_skips_rejected(tmp_path):
     conn.execute("INSERT INTO album_photos VALUES (1, ?, 1)", (str(f2),))
     conn.commit(); conn.close()
 
+    vid = src / "clip.mp4"; vid.write_bytes(b"movie")
     dest = tmp_path / "out"
-    m = export_album(str(db), "Cand", str(dest))
-    assert m["exported"] == 1 and m["skipped_rejected"] == 1
+    m = export_album(str(db), "Cand", str(dest), add_videos=[str(vid)])
+    assert m["exported"] == 1 and m["skipped_rejected"] == 1 and m["videos"] == 1
     assert (dest / "a.jpg").exists() and not (dest / "b.jpg").exists()
+    assert (dest / "clip.mp4").exists()                      # added video copied
     assert (dest / "manifest.json").exists() and (dest / "manifest.csv").exists()
 
 

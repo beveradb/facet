@@ -19,12 +19,14 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 from curator import curate
 from curator.config import load_config
 from curator.emit import write_contact_sheet
 from curator.exporter import export_album
 from curator.rank import photo_score
+from curator.video import write_video_picker
 from curator.writeback import write_album
 
 
@@ -98,10 +100,23 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_videos(args) -> int:
+    summaries = json.loads(Path(args.videos_json).read_text())
+    write_video_picker(summaries, args.out)
+    print(f"video picker ({len(summaries)} clips) -> {args.out}")
+    return 0
+
+
 def cmd_export(args) -> int:
-    manifest = export_album(args.db, args.album, args.dest, include_rejected=args.include_rejected)
+    add_videos = None
+    if args.add_videos:
+        add_videos = [ln.strip() for ln in Path(args.add_videos).read_text().splitlines() if ln.strip()]
+    manifest = export_album(
+        args.db, args.album, args.dest, include_rejected=args.include_rejected, add_videos=add_videos
+    )
     print(f"=== Export '{args.album}' -> {args.dest} ===")
-    print(f"  exported: {manifest['exported']}")
+    print(f"  exported stills: {manifest['exported']}")
+    print(f"  added videos: {manifest['videos']}")
     print(f"  skipped (rejected): {manifest['skipped_rejected']}")
     if manifest["missing_source"]:
         print(f"  MISSING source files: {len(manifest['missing_source'])}")
@@ -127,11 +142,18 @@ def main() -> int:
     r.add_argument("--write-album", metavar="NAME", default=None)
     r.set_defaults(func=cmd_run)
 
+    v = sub.add_parser("videos", help="build the day-grouped video picker from videos.json")
+    v.add_argument("--videos-json", required=True)
+    v.add_argument("--out", default="video_picker.html")
+    v.set_defaults(func=cmd_videos)
+
     e = sub.add_parser("export", help="copy an album's surviving originals + manifest to a folder")
     e.add_argument("--db", required=True)
     e.add_argument("--album", required=True)
     e.add_argument("--dest", required=True)
     e.add_argument("--include-rejected", action="store_true")
+    e.add_argument("--add-videos", metavar="FILE",
+                   help="newline-separated video paths (from the picker) to include in the export")
     e.set_defaults(func=cmd_export)
 
     args = ap.parse_args()

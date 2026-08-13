@@ -14,7 +14,13 @@ import sqlite3
 from pathlib import Path
 
 
-def export_album(db_path: str, album_name: str, dest_dir: str, include_rejected: bool = False) -> dict:
+def export_album(
+    db_path: str,
+    album_name: str,
+    dest_dir: str,
+    include_rejected: bool = False,
+    add_videos: list[str] | None = None,
+) -> dict:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -57,12 +63,27 @@ def export_album(db_path: str, album_name: str, dest_dir: str, include_rejected:
             {"file": name, "source": str(src), "date": r["date_taken"], "caption": r["caption"]}
         )
 
+    videos_out = []
+    for vpath in add_videos or []:
+        src = Path(vpath)
+        if not src.exists():
+            missing.append(vpath)
+            continue
+        name = src.name
+        if name in used_names:
+            name = f"{src.stem}__{len(used_names)}{src.suffix}"
+        used_names.add(name)
+        shutil.copy2(src, dest / name)
+        videos_out.append({"file": name, "source": str(src)})
+
     manifest = {
         "album": album_name,
         "exported": len(exported),
+        "videos": len(videos_out),
         "skipped_rejected": len(skipped_rejected),
         "missing_source": missing,
         "items": exported,
+        "video_items": videos_out,
     }
     (dest / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
     with (dest / "manifest.csv").open("w", newline="") as f:

@@ -274,7 +274,18 @@ Progress (2026-08-12 prototype): **1–5, 8, config + 23 tests DONE**; **6 in pr
 6. ⏳ Full-DB integration pass + tuning.
 7. ⬜ **Integration:** `api/routers/curator.py` + Angular "Curate" action & review view.
 8. ✅ `export` step for Google re-upload (`curate.py export`).
-9. ⬜ (v2) video frame-sampling.
+9. ⏳ **Video support** (Andrew wants videos in the final album — ~10-20 of ~100):
+   - 9a. ⏳ Frame-sample each clip (3-5 keyframes) → run through facet's normal image
+     pipeline (category, caption, moments, quality, embeddings) → aggregate into a
+     **per-video content summary**. Exclude Live-Photo `.MOV` companions of stills.
+   - 9b. ⬜ **Video picker** — day-grouped review page showing each clip's keyframe(s)
+     + AI summary + duration, to hand-pick clips to add; `export --add-videos` copies them.
+   - 9c. ⬜ **Videos compete in the auto-selection** (the target): treat each video as a
+     synthetic candidate (date from mtime, location from GPS-nearest, caption =
+     aggregated summary, img_emb = mean frame embedding, score from frames) that flows
+     through the SAME bucket → quota → rank → dedup → coverage pipeline, with a video
+     quota that weights a clip above a single still but caps videos so they don't crowd
+     out stills (per the brief). Dedups against stills of the same moment too.
 
 Also done beyond the original plan: `curator/config.py` (per-album tuning via the
 `scoring_config.json` `curator` block) and `docs/CURATOR.md` (user-facing doc).
