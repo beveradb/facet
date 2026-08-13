@@ -16,6 +16,7 @@ import pytest
 from curator import CuratorConfig, curate
 from curator.allocate import _apportion, allocate_quotas
 from curator.bucketing import Bucket, build_buckets
+from curator.config import config_from_dict, load_config
 from curator.datasource import Photo, load_photos
 from curator.dedup import dedup_bucket
 from curator.emit import write_contact_sheet
@@ -189,6 +190,28 @@ def test_coverage_warns_when_person_absent():
                             locations={}, undated=[], picks_by_bucket={b.id: [p]})
     _coverage_pass(result, cfg)
     assert any("Ghost" in w for w in result.coverage_warnings)
+
+
+# ---------------------------------------------------------------- config
+
+def test_config_from_dict_flattens_nested_and_cli_overrides():
+    block = {
+        "target_count": 50, "scene_gap_minutes": 20,
+        "dedup": {"phash_max": 3},
+        "coverage": {"min_shots_per_person": 2},
+        "rank_weights": {"aggregate": 0.4, "aesthetic": 0.2, "composition": 0.2, "face_quality": 0.2},
+    }
+    cfg = config_from_dict(block, target_count=99)          # CLI override supplied
+    assert cfg.target_count == 99                            # override beats block
+    assert cfg.scene_gap_minutes == 20                       # block value applied
+    assert cfg.phash_max == 3                                # nested dedup flattened
+    assert cfg.min_shots_per_person == 2                     # nested coverage flattened
+    assert cfg.rank_weights["aggregate"] == 0.4
+
+
+def test_load_config_missing_file_falls_back_to_defaults():
+    cfg = load_config(None)
+    assert cfg.target_count == 100 and cfg.candidate_multiplier == 1.5
 
 
 # ---------------------------------------------------------------- genericity / degradation

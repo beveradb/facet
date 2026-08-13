@@ -21,7 +21,8 @@ import sqlite3
 import sys
 from collections import defaultdict
 
-from curator import CuratorConfig, curate
+from curator import curate
+from curator.config import load_config
 from curator.emit import write_contact_sheet
 from curator.exporter import export_album
 from curator.rank import photo_score
@@ -69,7 +70,8 @@ def _write_album(db_path: str, name: str, result) -> int:
 
 
 def cmd_run(args) -> int:
-    cfg = CuratorConfig(target_count=args.target, candidate_multiplier=args.multiplier, timezone=args.tz)
+    cfg = load_config(args.config, target_count=args.target,
+                      candidate_multiplier=args.multiplier, timezone=args.tz)
     result = curate(args.db, cfg)
     summary = _summary(result, cfg)
 
@@ -132,8 +134,10 @@ def main() -> int:
 
     r = sub.add_parser("run", help="curate a DB into a candidate set")
     r.add_argument("--db", required=True)
-    r.add_argument("--target", type=int, default=100)
-    r.add_argument("--multiplier", type=float, default=1.5)
+    r.add_argument("--config", default=None,
+                   help="scoring_config.json with a `curator` block (per-album tuning)")
+    r.add_argument("--target", type=int, default=None, help="override curator.target_count (default 100)")
+    r.add_argument("--multiplier", type=float, default=None, help="override curator.candidate_multiplier")
     r.add_argument("--tz", default=None,
                    help="reserved: cross-contributor tz normalization (v2); v1 buckets on EXIF-local date")
     r.add_argument("--out", default="candidates.json")
