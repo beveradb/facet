@@ -5,8 +5,10 @@ Reads a facet SQLite DB, runs the coverage-constrained selection pipeline, and
 emits a candidate set: a JSON manifest, a printed summary, and (optionally) a
 facet album written back into the DB.
 
-    python curate.py --db photos.db --target 100 --out candidates.json
-    python curate.py --db photos.db --write-album "Curated Candidates"
+    # Curate -> manifest + contact sheet + facet album:
+    python curate.py run --db photos.db --contact-sheet sheet.html --write-album "Curated Candidates"
+    # After the human cut in facet, export surviving originals for re-upload:
+    python curate.py export --db photos.db --album "Curated Candidates" --dest ./curated_out
 
 Works on any facet DB built from any folder of media — no trip-specific
 assumptions (see docs/superpowers/specs/2026-08-12-album-curator-design.md §0).
@@ -21,6 +23,7 @@ from collections import defaultdict
 
 from curator import CuratorConfig, curate
 from curator.emit import write_contact_sheet
+from curator.exporter import export_album
 from curator.rank import photo_score
 
 
@@ -65,19 +68,7 @@ def _write_album(db_path: str, name: str, result) -> int:
         conn.close()
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--db", required=True)
-    ap.add_argument("--target", type=int, default=100)
-    ap.add_argument("--multiplier", type=float, default=1.5)
-    ap.add_argument("--tz", default=None,
-                    help="reserved: cross-contributor tz normalization (v2); v1 buckets on EXIF-local date")
-    ap.add_argument("--out", default="candidates.json")
-    ap.add_argument("--contact-sheet", metavar="PATH", default=None,
-                    help="write a self-contained HTML contact sheet of the candidates")
-    ap.add_argument("--write-album", metavar="NAME", default=None)
-    args = ap.parse_args()
-
+def cmd_run(args) -> int:
     cfg = CuratorConfig(target_count=args.target, candidate_multiplier=args.multiplier, timezone=args.tz)
     result = curate(args.db, cfg)
     summary = _summary(result, cfg)
@@ -122,6 +113,44 @@ def main() -> int:
         album_id = _write_album(args.db, args.write_album, result)
         print(f"  wrote facet album '{args.write_album}' (id={album_id}, {len(result.selected)} photos)")
     return 0
+
+
+def cmd_export(args) -> int:
+    manifest = export_album(args.db, args.album, args.dest, include_rejected=args.include_rejected)
+    print(f"=== Export '{args.album}' -> {args.dest} ===")
+    print(f"  exported: {manifest['exported']}")
+    print(f"  skipped (rejected): {manifest['skipped_rejected']}")
+    if manifest["missing_source"]:
+        print(f"  MISSING source files: {len(manifest['missing_source'])}")
+    print(f"  manifest -> {args.dest}/manifest.json + manifest.csv")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("run", help="curate a DB into a candidate set")
+    r.add_argument("--db", required=True)
+    r.add_argument("--target", type=int, default=100)
+    r.add_argument("--multiplier", type=float, default=1.5)
+    r.add_argument("--tz", default=None,
+                   help="reserved: cross-contributor tz normalization (v2); v1 buckets on EXIF-local date")
+    r.add_argument("--out", default="candidates.json")
+    r.add_argument("--contact-sheet", metavar="PATH", default=None,
+                   help="write a self-contained HTML contact sheet of the candidates")
+    r.add_argument("--write-album", metavar="NAME", default=None)
+    r.set_defaults(func=cmd_run)
+
+    e = sub.add_parser("export", help="copy an album's surviving originals + manifest to a folder")
+    e.add_argument("--db", required=True)
+    e.add_argument("--album", required=True)
+    e.add_argument("--dest", required=True)
+    e.add_argument("--include-rejected", action="store_true")
+    e.set_defaults(func=cmd_export)
+
+    args = ap.parse_args()
+    return args.func(args)
 
 
 if __name__ == "__main__":

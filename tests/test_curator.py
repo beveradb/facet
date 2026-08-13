@@ -19,6 +19,7 @@ from curator.bucketing import Bucket, build_buckets
 from curator.datasource import Photo, load_photos
 from curator.dedup import dedup_bucket
 from curator.emit import write_contact_sheet
+from curator.exporter import export_album
 from curator.geocode import assign_contributors, assign_locations
 from curator.rank import photo_score, pick_bucket
 from curator.select import CurationResult, _coverage_pass
@@ -260,6 +261,29 @@ def test_selected_matches_picks_by_bucket(tiny_db):
     # the selection and the per-bucket picks must never desync (bucket-id uniqueness)
     result = curate(tiny_db, CuratorConfig(target_count=4, candidate_multiplier=1.0, min_per_day=1))
     assert len(result.selected) == sum(len(v) for v in result.picks_by_bucket.values())
+
+
+def test_export_album_copies_survivors_and_skips_rejected(tmp_path):
+    src = tmp_path / "src"; src.mkdir()
+    f1 = src / "a.jpg"; f1.write_bytes(b"img1")
+    f2 = src / "b.jpg"; f2.write_bytes(b"img2")
+    db = tmp_path / "e.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE photos (path TEXT, filename TEXT, is_rejected INT, date_taken TEXT, caption TEXT)")
+    conn.execute("CREATE TABLE albums (id INTEGER PRIMARY KEY, name TEXT)")
+    conn.execute("CREATE TABLE album_photos (album_id INT, photo_path TEXT, position INT)")
+    conn.execute("INSERT INTO photos VALUES (?,?,?,?,?)", (str(f1), "a.jpg", 0, "2026:07:22 10:00:00", "cap a"))
+    conn.execute("INSERT INTO photos VALUES (?,?,?,?,?)", (str(f2), "b.jpg", 1, "2026:07:22 11:00:00", "cap b"))
+    conn.execute("INSERT INTO albums (id, name) VALUES (1, 'Cand')")
+    conn.execute("INSERT INTO album_photos VALUES (1, ?, 0)", (str(f1),))
+    conn.execute("INSERT INTO album_photos VALUES (1, ?, 1)", (str(f2),))
+    conn.commit(); conn.close()
+
+    dest = tmp_path / "out"
+    m = export_album(str(db), "Cand", str(dest))
+    assert m["exported"] == 1 and m["skipped_rejected"] == 1
+    assert (dest / "a.jpg").exists() and not (dest / "b.jpg").exists()
+    assert (dest / "manifest.json").exists() and (dest / "manifest.csv").exists()
 
 
 def test_contact_sheet_renders(tiny_db, tmp_path):
