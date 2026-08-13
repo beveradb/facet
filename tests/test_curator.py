@@ -247,7 +247,7 @@ def test_config_from_dict_flattens_nested_and_cli_overrides():
 
 def test_load_config_missing_file_falls_back_to_defaults():
     cfg = load_config(None)
-    assert cfg.target_count == 100 and cfg.candidate_multiplier == 1.5
+    assert cfg.target_count == 100 and cfg.candidate_multiplier == 1.2
 
 
 # ---------------------------------------------------------------- genericity / degradation

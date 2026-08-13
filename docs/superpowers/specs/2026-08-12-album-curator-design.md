@@ -60,7 +60,7 @@ constraints**: decide which items *collectively* represent the trip.
 
 **Core method (from the brief, confirmed):** don't globally rank and take top-N.
 Instead **bucket → allocate a quota per bucket → rank only within buckets →
-person-coverage pass → emit ~150 candidates** for a human final cut to 100.
+person-coverage pass → emit ~120 candidates** for a human final cut to 100.
 
 ## 2. What we learned from the data (drives the design)
 
@@ -80,7 +80,7 @@ Verified on this dataset (see memory `liquicity-data-shape`, `facet-pipeline-ins
 
 ## 3. Scope (v1) & decisions
 
-**In scope (v1):** stills-only curation → ~150 candidate album + manifest;
+**In scope (v1):** stills-only curation → ~120 candidate album + manifest;
 integrated as a facet feature (algorithm prototyped standalone first, then API +
 UI); person-coverage as a **soft** preference; export folder for **Google Photos
 re-upload**.
@@ -130,7 +130,7 @@ curate.py          # CLI entry (prototype); later mirrored by api/routers/curato
 ```
 facet DB ──datasource──▶ [Photo]  ──geocode/contributors──▶ enriched [Photo]
    └▶ bucketing ▶ [Bucket]  ▶ dedup (collapse slots)
-        ▶ allocate (quota per bucket, Σ=~150, floors)
+        ▶ allocate (quota per bucket, Σ=~120, floors)
         ▶ rank (pick quota per bucket)
         ▶ coverage (soft person swaps)
         ▶ CurationResult ▶ {album writeback | candidates.json | contact sheet | export folder}
@@ -198,7 +198,8 @@ Weights from `curator.rank_weights` (default mirrors `top_picks_weights`). Rank
 slots within each bucket descending.
 
 ### 5.5 Quota allocation (Σ = target × candidate_multiplier)
-`target=100`, `candidate_multiplier=1.5` → ~150 candidates.
+`target=100`, `candidate_multiplier=1.2` → ~120 candidates (a ~20% buffer so the
+human cut removes ~20 rather than ~50; raise it for more headroom).
 - **Day weights:** `day_weight = clamp(count^0.6, …)` (sub-linear so the 205-photo
   day doesn't dominate) × optional significance (e.g. festival days > transit).
 - **Per-day floor:** `min_per_day` (default 2) so no day drops out.
@@ -221,7 +222,7 @@ eyes_open ≥ e and not blink):
 - If no acceptable swap: **record an unmet-coverage warning** (don't force it).
 
 ### 5.7 Output
-- **Facet album** "Curated Candidates — {trip} (~150)" via `albums`/`album_photos`
+- **Facet album** "Curated Candidates — {trip} (~120)" via `albums`/`album_photos`
   (idempotent: replace on re-run).
 - **`candidates.json`** manifest: per item `{path, day, location, event, bucket_id,
   rank_in_bucket, score, reason, alternates[]}` + summary (per-day/event counts,
@@ -235,7 +236,7 @@ eyes_open ≥ e and not blink):
 ```json
 "curator": {
   "target_count": 100,
-  "candidate_multiplier": 1.5,
+  "candidate_multiplier": 1.2,
   "timezone": null,
   "min_per_day": 2,
   "min_per_event": 1,
@@ -258,7 +259,7 @@ All tunable per album/trip → genericity requirement satisfied.
 - **Property:** quota sum invariant; every day/event represented ≥ floor.
 - **Golden:** run on the 53-photo sample DB → assert stable bucket/quota shape.
 - **Integration (post full run):** run on `liquicity.db` (787) → sanity-check the
-  ~150 spread by day/location, coverage report, and eyeball the contact sheet.
+  ~120 spread by day/location, coverage report, and eyeball the contact sheet.
 
 ## 8. Build order (phased)
 
@@ -281,7 +282,8 @@ Also done beyond the original plan: `curator/config.py` (per-album tuning via th
 ## 9. Open questions for Andrew (non-blocking; sensible defaults chosen)
 - **Significance weighting:** should festival days be weighted above transit days
   explicitly, or is sub-linear count weighting + floor enough? (Default: count-only.)
-- **Candidate count:** 150 candidates for a 100 cut — good, or emit fewer/more?
+- **Candidate count:** default 120 (cut ~20 to reach 100), set 2026-08-13 per
+  Andrew; adjustable via `candidate_multiplier`.
 - **Clock-skew correction:** enable `deskew.apply` once we've eyeballed the
   detected offsets? (Default: detect-and-flag only.)
 - **Album/share:** also generate a facet no-login **share link** for the

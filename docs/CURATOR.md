@@ -32,7 +32,7 @@ what makes it cheap and what stops one big day from dominating.
    similarity within a short time window (also catches the same moment from two
    phones). Uses the image embedding, not the caption, so "same scene, people
    moved" collapses while a genuinely different follow-up shot is kept.
-4. **Allocate** — distribute a candidate budget (default `target × 1.5`) across
+4. **Allocate** — distribute a candidate budget (default `target × 1.2`) across
    buckets: sub-linear in photo count (a huge day can't dominate) with a **floor
    per day** (no day drops out). Largest-remainder rounding hits the budget.
 5. **Rank** — score photos within each bucket (facet aggregate/aesthetic/
