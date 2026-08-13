@@ -36,8 +36,8 @@ def _decode_embedding(blob) -> np.ndarray | None:
     return arr / norm if norm else arr
 
 
-@dataclass
-class Photo:
+@dataclass(eq=False)  # identity semantics: list.remove()/`in` must match THIS object,
+class Photo:          # not another photo with equal field values (breaks the coverage swap)
     path: str
     filename: str
     dt: datetime | None

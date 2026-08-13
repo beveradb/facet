@@ -92,10 +92,11 @@ def _coverage_pass(result: CurationResult, cfg: CuratorConfig) -> None:
         )
         if target_bucket is None:
             continue
+        # A within-bucket swap preserves the bucket's quota, so it can never drop
+        # a day/event below its floor — we only need something to swap against.
         picks = result.picks_by_bucket.get(target_bucket.id, [])
-        floor = min(cfg.min_per_event, len(target_bucket.slots))
-        if len(picks) <= floor:
-            result.coverage_warnings.append(f"{name}: covering bucket at floor; not forced")
+        if not picks:
+            result.coverage_warnings.append(f"{name}: covering bucket has no selected slot to swap")
             continue
         weakest = min(picks, key=lambda p: rank.photo_score(p, cfg))
         cost = rank.photo_score(weakest, cfg) - rank.photo_score(cand, cfg)

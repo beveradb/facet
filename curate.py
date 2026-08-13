@@ -20,6 +20,7 @@ import sys
 from collections import defaultdict
 
 from curator import CuratorConfig, curate
+from curator.emit import write_contact_sheet
 from curator.rank import photo_score
 
 
@@ -72,6 +73,8 @@ def main() -> int:
     ap.add_argument("--tz", default=None,
                     help="reserved: cross-contributor tz normalization (v2); v1 buckets on EXIF-local date")
     ap.add_argument("--out", default="candidates.json")
+    ap.add_argument("--contact-sheet", metavar="PATH", default=None,
+                    help="write a self-contained HTML contact sheet of the candidates")
     ap.add_argument("--write-album", metavar="NAME", default=None)
     args = ap.parse_args()
 
@@ -110,6 +113,10 @@ def main() -> int:
     for k, v in summary.items():
         print(f"  {k}: {v}")
     print(f"\n  manifest -> {args.out}")
+
+    if args.contact_sheet:
+        write_contact_sheet(result, args.db, args.contact_sheet, cfg)
+        print(f"  contact sheet -> {args.contact_sheet}")
 
     if args.write_album:
         album_id = _write_album(args.db, args.write_album, result)

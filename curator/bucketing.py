@@ -20,12 +20,15 @@ class Bucket:
     day: str
     location: str | None
     event: str
+    seq: int = -1  # unique index within the run; assigned by build_buckets
     photos: list[Photo] = field(default_factory=list)
     slots: list[list[Photo]] = field(default_factory=list)  # after dedup; each slot = near-dupes
 
     @property
     def id(self) -> str:
-        return f"{self.day}|{self.location or '?'}|{self.event}"
+        # Must be unique: two scenes can share day/location/event (split by a gap),
+        # and quotas/picks are keyed by id — a collision silently drops a bucket.
+        return f"{self.day}|{self.location or '?'}|{self.event}#{self.seq}"
 
     def label(self) -> str:
         loc = self.location or "?"
@@ -83,6 +86,7 @@ def build_buckets(photos: list[Photo], cfg) -> tuple[list[Bucket], list[Photo]]:
                 continue
         merged.append(b)
 
-    for b in merged:
+    for i, b in enumerate(merged):
         b.event = _event_label(b.photos)
+        b.seq = i
     return merged, undated
