@@ -53,6 +53,7 @@ class Photo:          # not another photo with equal field values (breaks the co
     expression: float
     is_blink: int
     is_rejected: int
+    is_junk: bool
     is_dup_lead: int
     duplicate_group_id: int | None
     burst_group_id: int | None
@@ -76,7 +77,7 @@ _PHOTO_COLUMNS = """
     eyes_open_score, expression_score,
     is_blink, is_rejected, is_duplicate_lead, duplicate_group_id, burst_group_id,
     phash, caption, narrative_moment, narrative_moment_confidence,
-    caption_embedding, clip_embedding, camera_model
+    caption_embedding, clip_embedding, camera_model, junk_kind
 """
 
 
@@ -112,6 +113,7 @@ def load_photos(db_path: str) -> list[Photo]:
                 expression=r["expression_score"] if r["expression_score"] is not None else 0.5,
                 is_blink=r["is_blink"] or 0,
                 is_rejected=r["is_rejected"] or 0,
+                is_junk=bool(r["junk_kind"] and r["junk_kind"] != "not_junk"),
                 is_dup_lead=r["is_duplicate_lead"] or 0,
                 duplicate_group_id=r["duplicate_group_id"],
                 burst_group_id=r["burst_group_id"],

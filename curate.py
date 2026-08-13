@@ -40,6 +40,8 @@ def _summary(result, cfg) -> dict:
         "selected": len(result.selected),
         "buckets": len(result.buckets),
         "undated_excluded": len(result.undated),
+        "junk_excluded": result.excluded_junk,
+        "rejected_excluded": result.excluded_rejected,
         "reference_contributor": result.reference,
         "contributors": result.contributors,
         "selected_by_day": dict(sorted(by_day.items())),

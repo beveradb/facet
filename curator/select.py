@@ -56,6 +56,8 @@ class CurationResult:
     reference: str | None
     locations: dict[str, int]
     undated: list[Photo]
+    excluded_junk: int = 0
+    excluded_rejected: int = 0
     coverage_warnings: list[str] = field(default_factory=list)
     picks_by_bucket: dict[str, list[Photo]] = field(default_factory=dict)
 
@@ -123,8 +125,14 @@ def _coverage_pass(result: CurationResult, cfg: CuratorConfig) -> None:
 
 def curate(db_path: str, cfg: CuratorConfig | None = None) -> CurationResult:
     cfg = cfg or CuratorConfig()
-    photos = load_photos(db_path)
+    all_photos = load_photos(db_path)
     persons = load_persons(db_path)
+
+    # A curated trip album must never contain screenshots/documents/receipts/memes
+    # (facet's junk detection) or photos the user already rejected.
+    n_junk = sum(1 for p in all_photos if p.is_junk)
+    n_rejected = sum(1 for p in all_photos if p.is_rejected and not p.is_junk)
+    photos = [p for p in all_photos if not p.is_junk and not p.is_rejected]
 
     contributors, reference = geocode.assign_contributors(photos)
     locations = geocode.assign_locations(photos)
@@ -151,6 +159,8 @@ def curate(db_path: str, cfg: CuratorConfig | None = None) -> CurationResult:
         reference=reference,
         locations=locations,
         undated=undated,
+        excluded_junk=n_junk,
+        excluded_rejected=n_rejected,
         picks_by_bucket=picks_by_bucket,
     )
     _coverage_pass(result, cfg)

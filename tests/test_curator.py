@@ -34,7 +34,7 @@ def mkphoto(i=0, **over) -> Photo:
         path=f"/p/{i}.jpg", filename=f"IMG_{i}.jpg", dt=BASE + timedelta(minutes=i),
         lat=None, lon=None, category="concert", aggregate=6.0, aesthetic=6.0,
         comp=6.0, face_quality=6.0, face_ratio=0.0, eyes_open=1.0, expression=0.5,
-        is_blink=0, is_rejected=0, is_dup_lead=0, duplicate_group_id=None, burst_group_id=None,
+        is_blink=0, is_rejected=0, is_junk=False, is_dup_lead=0, duplicate_group_id=None, burst_group_id=None,
         phash=None, caption=None, moment="concert", moment_conf=0.5, emb=None, img_emb=None,
         camera="TestCam", persons=[],
     )
@@ -290,7 +290,7 @@ def tiny_db(tmp_path):
         face_ratio REAL, eyes_open_score REAL, expression_score REAL, is_blink INT,
         is_rejected INT, is_duplicate_lead INT, duplicate_group_id INT, burst_group_id INT, phash TEXT,
         caption TEXT, narrative_moment TEXT, narrative_moment_confidence REAL,
-        caption_embedding BLOB, clip_embedding BLOB, camera_model TEXT, thumbnail BLOB)""")
+        caption_embedding BLOB, clip_embedding BLOB, camera_model TEXT, thumbnail BLOB, junk_kind TEXT)""")
     conn.execute("CREATE TABLE faces (photo_path TEXT, person_id INT)")
     conn.execute("CREATE TABLE persons (id INT, name TEXT)")
     conn.execute("CREATE TABLE albums (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT)")
@@ -317,6 +317,36 @@ def test_load_photos_and_curate_end_to_end(tiny_db):
     assert result.selected                               # produced a non-empty selection
     days = {p.day for p in result.selected}
     assert days == {"2026-07-22", "2026-07-23"}          # both days represented
+
+
+def test_junk_and_rejected_excluded_from_candidacy(tmp_path):
+    db = tmp_path / "j.db"
+    conn = sqlite3.connect(db)
+    conn.execute("""CREATE TABLE photos (path TEXT, filename TEXT, date_taken TEXT, gps_latitude REAL,
+        gps_longitude REAL, category TEXT, aggregate REAL, aesthetic REAL, comp_score REAL, face_quality REAL,
+        face_ratio REAL, eyes_open_score REAL, expression_score REAL, is_blink INT, is_rejected INT,
+        is_duplicate_lead INT, duplicate_group_id INT, burst_group_id INT, phash TEXT, caption TEXT,
+        narrative_moment TEXT, narrative_moment_confidence REAL, caption_embedding BLOB, clip_embedding BLOB,
+        camera_model TEXT, junk_kind TEXT)""")
+    conn.execute("CREATE TABLE faces (photo_path TEXT, person_id INT)")
+    conn.execute("CREATE TABLE persons (id INT, name TEXT)")
+
+    def ins(path, hour, junk=None, rej=0):
+        conn.execute(
+            "INSERT INTO photos (path, filename, date_taken, aggregate, camera_model, junk_kind, is_rejected) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (path, path, f"2026:07:22 1{hour}:00:00", 6.0, "Cam", junk, rej),
+        )
+    ins("/n1.jpg", 0); ins("/n2.jpg", 1)
+    ins("/doc.jpg", 2, junk="document")
+    ins("/rej.jpg", 3, rej=1)
+    conn.commit(); conn.close()
+
+    result = curate(str(db), CuratorConfig(min_per_day=1))
+    names = {p.filename for p in result.selected}
+    assert "/doc.jpg" not in names and "/rej.jpg" not in names
+    assert result.excluded_junk == 1 and result.excluded_rejected == 1
+    assert "/n1.jpg" in names
 
 
 def test_selected_matches_picks_by_bucket(tiny_db):
