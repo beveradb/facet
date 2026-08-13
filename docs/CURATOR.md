@@ -27,9 +27,11 @@ what makes it cheap and what stops one big day from dominating.
 2. **Bucket** — split by **day → location → capture-time gap**, then merge
    adjacent scenes whose captions are semantically close (one event split by a
    lull). Each bucket is one coherent event.
-3. **Dedup** — collapse near-duplicates (facet dup-groups, perceptual hash, and
-   the cross-contributor "same moment from two phones" case) so a similarity
-   group takes **one** slot.
+3. **Dedup** — collapse a scene shot several times into **one** slot: facet
+   dup/burst groups, perceptual hash, and — the key signal — **image-embedding**
+   similarity within a short time window (also catches the same moment from two
+   phones). Uses the image embedding, not the caption, so "same scene, people
+   moved" collapses while a genuinely different follow-up shot is kept.
 4. **Allocate** — distribute a candidate budget (default `target × 1.5`) across
    buckets: sub-linear in photo count (a huge day can't dominate) with a **floor
    per day** (no day drops out). Largest-remainder rounding hits the budget.
@@ -78,7 +80,7 @@ Every knob has a sight-unseen default and can be overridden per album via a
 `curator` block in `scoring_config.json` (pass `--config`). CLI flags override the
 block, which overrides defaults. Keys (see spec §6): `target_count`,
 `candidate_multiplier`, `min_per_day`, `min_per_event`, `scene_gap_minutes`,
-`merge_cos`, `dedup.{phash_max,dup_cos,same_moment_minutes}`,
+`merge_cos`, `dedup.{phash_max,scene_cos,same_scene_minutes}`,
 `rank_weights.{aggregate,aesthetic,composition,face_quality}`,
 `day_weight_exponent`, `event_weight_exponent`,
 `coverage.{min_shots_per_person,min_face_quality,min_eyes_open,max_swap_cost}`.

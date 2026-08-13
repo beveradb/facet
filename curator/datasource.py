@@ -55,11 +55,13 @@ class Photo:          # not another photo with equal field values (breaks the co
     is_rejected: int
     is_dup_lead: int
     duplicate_group_id: int | None
+    burst_group_id: int | None
     phash: str | None
     caption: str | None
     moment: str | None
     moment_conf: float
-    emb: np.ndarray | None
+    emb: np.ndarray | None        # caption embedding (semantic event merge)
+    img_emb: np.ndarray | None    # image embedding (visual near-duplicate dedup)
     camera: str | None
     persons: list[int] = field(default_factory=list)
     # enriched downstream:
@@ -72,9 +74,9 @@ _PHOTO_COLUMNS = """
     path, filename, date_taken, gps_latitude, gps_longitude, category,
     aggregate, aesthetic, comp_score, face_quality, face_ratio,
     eyes_open_score, expression_score,
-    is_blink, is_rejected, is_duplicate_lead, duplicate_group_id,
+    is_blink, is_rejected, is_duplicate_lead, duplicate_group_id, burst_group_id,
     phash, caption, narrative_moment, narrative_moment_confidence,
-    caption_embedding, camera_model
+    caption_embedding, clip_embedding, camera_model
 """
 
 
@@ -112,11 +114,13 @@ def load_photos(db_path: str) -> list[Photo]:
                 is_rejected=r["is_rejected"] or 0,
                 is_dup_lead=r["is_duplicate_lead"] or 0,
                 duplicate_group_id=r["duplicate_group_id"],
+                burst_group_id=r["burst_group_id"],
                 phash=r["phash"],
                 caption=r["caption"],
                 moment=r["narrative_moment"],
                 moment_conf=r["narrative_moment_confidence"] or 0.0,
                 emb=_decode_embedding(r["caption_embedding"]),
+                img_emb=_decode_embedding(r["clip_embedding"]),
                 camera=r["camera_model"],
                 persons=faces.get(r["path"], []),
             )
@@ -124,10 +128,12 @@ def load_photos(db_path: str) -> list[Photo]:
     return photos
 
 
-def load_persons(db_path: str) -> dict[int, str]:
+def load_persons(db_path: str) -> dict[int, str | None]:
+    """person_id -> name. Name is None for unnamed clusters; the coverage pass
+    only ensures NAMED (main) people appear, so we must not fabricate names."""
     conn = sqlite3.connect(db_path)
     try:
         rows = conn.execute("SELECT id, name FROM persons").fetchall()
     finally:
         conn.close()
-    return {pid: (name or f"person_{pid}") for pid, name in rows}
+    return {pid: (name or None) for pid, name in rows}

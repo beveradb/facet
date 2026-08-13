@@ -20,8 +20,8 @@ class CuratorConfig:
     scene_gap_minutes: int = 45
     merge_cos: float = 0.82
     phash_max: int = 8
-    dup_cos: float = 0.90
-    same_moment_minutes: int = 3
+    scene_cos: float = 0.90         # image-embedding cosine above which two frames are the same scene
+    same_scene_minutes: int = 5     # ...and must be shot within this window to collapse
     day_weight_exponent: float = 0.6
     event_weight_exponent: float = 0.7
     rank_weights: dict = field(
@@ -69,21 +69,31 @@ def _flattering(p: Photo, cfg) -> bool:
 
 
 def _coverage_pass(result: CurationResult, cfg: CuratorConfig) -> None:
+    photo_slot = {id(p): slot for b in result.buckets for slot in b.slots for p in slot}
     selected = {id(p) for p in result.selected}
+
+    def scene_taken(p: Photo) -> bool:
+        # is this photo's slot (scene) already represented in the selection?
+        slot = photo_slot.get(id(p))
+        return slot is not None and any(id(q) in selected for q in slot)
+
     for pid, name in result.persons.items():
+        if not name:
+            continue  # only ensure NAMED (main) people appear; unnamed clusters are ignored
         shots = [p for p in result.selected if pid in p.persons and _flattering(p, cfg)]
         if len(shots) >= cfg.min_shots_per_person:
             continue
-        # best unselected flattering photo of this person
+        # best flattering photo of this person from a scene NOT already selected
+        # (never duplicate a scene just to cover a person)
         cands = [
             p
             for b in result.buckets
             for slot in b.slots
             for p in slot
-            if pid in p.persons and _flattering(p, cfg) and id(p) not in selected
+            if pid in p.persons and _flattering(p, cfg) and id(p) not in selected and not scene_taken(p)
         ]
         if not cands:
-            result.coverage_warnings.append(f"{name}: no flattering shot available at all")
+            result.coverage_warnings.append(f"{name}: no flattering uncovered shot available")
             continue
         cand = max(cands, key=lambda p: rank.photo_score(p, cfg))
         # find the bucket that owns cand; try to swap its weakest pick above the floor

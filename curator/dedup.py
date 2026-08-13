@@ -21,18 +21,27 @@ def _phash_hamming(a: str | None, b: str | None) -> int | None:
 
 
 def _same_slot(p: Photo, q: Photo, cfg) -> bool:
+    # facet's own groupings: exact/near duplicates and rapid bursts
     if p.duplicate_group_id is not None and p.duplicate_group_id == q.duplicate_group_id:
         return True
+    if p.burst_group_id is not None and p.burst_group_id == q.burst_group_id:
+        return True
+    # cheap catch for truly near-identical frames
     ham = _phash_hamming(p.phash, q.phash)
     if ham is not None and ham <= cfg.phash_max:
         return True
+    # same scene: visually near-identical IMAGE embeddings shot close in time.
+    # Image embeddings (not captions) are what separate "same scene, people moved"
+    # from genuinely different shots; this also collapses the same moment captured
+    # by two different phones. Calibrated on real near-dupes (clip cos 0.90-0.98)
+    # vs a distinct follow-up shot of the same subject (0.85).
     return (
-        p.emb is not None
-        and q.emb is not None
+        p.img_emb is not None
+        and q.img_emb is not None
         and p.dt is not None
         and q.dt is not None
-        and abs((p.dt - q.dt).total_seconds()) <= cfg.same_moment_minutes * 60
-        and float(p.emb @ q.emb) >= cfg.dup_cos
+        and abs((p.dt - q.dt).total_seconds()) <= cfg.same_scene_minutes * 60
+        and float(p.img_emb @ q.img_emb) >= cfg.scene_cos
     )
 
 

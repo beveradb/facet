@@ -34,8 +34,8 @@ def mkphoto(i=0, **over) -> Photo:
         path=f"/p/{i}.jpg", filename=f"IMG_{i}.jpg", dt=BASE + timedelta(minutes=i),
         lat=None, lon=None, category="concert", aggregate=6.0, aesthetic=6.0,
         comp=6.0, face_quality=6.0, face_ratio=0.0, eyes_open=1.0, expression=0.5,
-        is_blink=0, is_rejected=0, is_dup_lead=0, duplicate_group_id=None,
-        phash=None, caption=None, moment="concert", moment_conf=0.5, emb=None,
+        is_blink=0, is_rejected=0, is_dup_lead=0, duplicate_group_id=None, burst_group_id=None,
+        phash=None, caption=None, moment="concert", moment_conf=0.5, emb=None, img_emb=None,
         camera="TestCam", persons=[],
     )
     d.update(over)
@@ -136,16 +136,27 @@ def test_dedup_groups_by_duplicate_group_and_phash():
     assert sum(len(s) for s in b.slots) == 5             # partitions all photos
 
 
-def test_dedup_cross_contributor_embedding_and_time():
-    cfg = CuratorConfig(dup_cos=0.9, same_moment_minutes=5)
+def test_dedup_same_scene_by_image_embedding_and_time():
+    cfg = CuratorConfig(scene_cos=0.9, same_scene_minutes=5)
     e = np.ones(8, dtype=np.float32); e /= np.linalg.norm(e)
+    far = np.array([1, -1, 1, -1, 1, -1, 1, -1], dtype=np.float32); far /= np.linalg.norm(far)
     photos = [
-        mkphoto(0, dt=datetime(2026, 7, 22, 10, 0), emb=e, camera="Pixel"),
-        mkphoto(1, dt=datetime(2026, 7, 22, 10, 2), emb=e, camera="iPhone"),  # same moment, close emb
+        mkphoto(0, dt=datetime(2026, 7, 22, 10, 0), img_emb=e, camera="Pixel"),
+        mkphoto(1, dt=datetime(2026, 7, 22, 10, 2), img_emb=e, camera="iPhone"),  # same scene, two phones
+        mkphoto(2, dt=datetime(2026, 7, 22, 10, 3), img_emb=far, camera="Pixel"),  # visually distinct
+        mkphoto(3, dt=datetime(2026, 7, 22, 11, 0), img_emb=e, camera="Pixel"),   # same look, 1h later -> keep
     ]
     b = Bucket("d", "l", "e"); b.photos = photos
     dedup_bucket(b, cfg)
-    assert len(b.slots) == 1                             # collapsed to one slot
+    assert len(b.slots) == 3                             # {0,1} collapse; 2 and 3 stay separate
+
+
+def test_dedup_by_burst_group():
+    cfg = CuratorConfig()
+    photos = [mkphoto(0, burst_group_id=5), mkphoto(1, burst_group_id=5), mkphoto(2, burst_group_id=None)]
+    b = Bucket("d", "l", "e"); b.photos = photos
+    dedup_bucket(b, cfg)
+    assert sorted(len(s) for s in b.slots) == [1, 2]     # burst {0,1} collapses, 2 alone
 
 
 # ---------------------------------------------------------------- rank
@@ -191,6 +202,30 @@ def test_coverage_warns_when_person_absent():
                             locations={}, undated=[], picks_by_bucket={b.id: [p]})
     _coverage_pass(result, cfg)
     assert any("Ghost" in w for w in result.coverage_warnings)
+
+
+def test_coverage_ignores_unnamed_clusters():
+    cfg = CuratorConfig(min_shots_per_person=1)
+    p = mkphoto(0, persons=[])
+    b = Bucket("d", "l", "e"); b.slots = [[p]]
+    result = CurationResult(selected=[p], buckets=[b], quotas={b.id: 1},
+                            persons={1: None}, contributors={}, reference=None,   # unnamed cluster
+                            locations={}, undated=[], picks_by_bucket={b.id: [p]})
+    _coverage_pass(result, cfg)
+    assert result.coverage_warnings == [] and result.selected == [p]  # untouched
+
+
+def test_coverage_never_duplicates_a_scene():
+    # a named person's only covering shot shares a slot with an already-selected photo
+    cfg = CuratorConfig(min_shots_per_person=1, min_face_quality=5.0, min_eyes_open=0.5, max_swap_cost=99)
+    rep = mkphoto(0, face_ratio=0.3, face_quality=6.0, persons=[])
+    same_scene = mkphoto(1, face_ratio=0.3, face_quality=8.0, persons=[1])  # SAME slot, covers person 1
+    b = Bucket("d", "l", "e"); b.slots = [[rep, same_scene]]                # one slot, two photos
+    result = CurationResult(selected=[rep], buckets=[b], quotas={b.id: 1},
+                            persons={1: "Alice"}, contributors={}, reference=None,
+                            locations={}, undated=[], picks_by_bucket={b.id: [rep]})
+    _coverage_pass(result, cfg)
+    assert same_scene not in result.selected and result.selected == [rep]  # no scene duplication
 
 
 # ---------------------------------------------------------------- config
@@ -253,9 +288,9 @@ def tiny_db(tmp_path):
         path TEXT, filename TEXT, date_taken TEXT, gps_latitude REAL, gps_longitude REAL,
         category TEXT, aggregate REAL, aesthetic REAL, comp_score REAL, face_quality REAL,
         face_ratio REAL, eyes_open_score REAL, expression_score REAL, is_blink INT,
-        is_rejected INT, is_duplicate_lead INT, duplicate_group_id INT, phash TEXT,
+        is_rejected INT, is_duplicate_lead INT, duplicate_group_id INT, burst_group_id INT, phash TEXT,
         caption TEXT, narrative_moment TEXT, narrative_moment_confidence REAL,
-        caption_embedding BLOB, camera_model TEXT, thumbnail BLOB)""")
+        caption_embedding BLOB, clip_embedding BLOB, camera_model TEXT, thumbnail BLOB)""")
     conn.execute("CREATE TABLE faces (photo_path TEXT, person_id INT)")
     conn.execute("CREATE TABLE persons (id INT, name TEXT)")
     conn.execute("CREATE TABLE albums (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT)")

@@ -14,7 +14,7 @@ from .select import CuratorConfig
 
 # curator-block key -> CuratorConfig field (top-level keys map 1:1 and are implicit)
 _NESTED = {
-    "dedup": {"phash_max": "phash_max", "dup_cos": "dup_cos", "same_moment_minutes": "same_moment_minutes"},
+    "dedup": {"phash_max": "phash_max", "scene_cos": "scene_cos", "same_scene_minutes": "same_scene_minutes"},
     "coverage": {
         "min_shots_per_person": "min_shots_per_person",
         "min_face_quality": "min_face_quality",

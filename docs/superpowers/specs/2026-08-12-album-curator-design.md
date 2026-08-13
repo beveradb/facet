@@ -175,14 +175,18 @@ gallery's keyboard-first reject + 7s-undo for the human cut to 100.
    comes from the dominant `narrative_moment` / a caption keyword.
 
 ### 5.3 Dedup → slots
-Collapse near-duplicates so a similarity group takes **one** quota slot:
-- facet's `duplicate_group_id` / `is_duplicate_lead`,
-- `phash` Hamming ≤ `phash_max` (default 8) within a bucket,
-- **cross-contributor**: same-moment (time within N min) + `caption_embedding`
-  (or `clip_embedding`) cosine ≥ `dup_cos` (0.9) — catches "same moment, different
-  phones" the brief flags.
-Each slot keeps its best member (by §5.4 score); others are recorded as
-alternates in the manifest.
+Collapse near-duplicates so a similarity group (a scene shot several times in a
+few seconds) takes **one** quota slot:
+- facet's `duplicate_group_id` and `burst_group_id`,
+- `phash` Hamming ≤ `phash_max` (default 8) — cheap catch for near-identical frames,
+- **same scene:** `clip_embedding` (the *image* embedding, not the caption) cosine
+  ≥ `scene_cos` (default **0.90**) **and** shot within `same_scene_minutes`
+  (default 5). Image embeddings are what separate "same scene, people moved" from a
+  genuinely different shot, and this also collapses the same moment captured by two
+  phones. **Calibrated on real near-dupes** (clip cos 0.90–0.98) vs a distinct
+  follow-up of the same subject (0.85, correctly kept). Caption embeddings are too
+  noisy here (0.6–0.9) and phash too strict (8–30) — both miss these.
+Each slot keeps its best member (by §5.4 score) via union-find over the relations.
 
 ### 5.4 Within-bucket photo score
 Reuse facet's Top-Picks philosophy. For a photo:
@@ -204,12 +208,16 @@ slots within each bucket descending.
   bucket's available slots.
 
 ### 5.6 Person-coverage second pass (soft)
-For each named person (rename step is a one-time human ~10 min) with fewer than
-`min_shots_per_person` (default 1) *flattering* appearances among the selected
-(flattering ≈ face_quality ≥ q and eyes_open ≥ e and not blink):
-- find their best-covering **unselected** slot in their **nearest bucket**;
-- swap it for the **weakest selected** slot in that bucket **iff** the score cost
-  ≤ `max_swap_cost` **and** it doesn't drop the bucket below its floor.
+Runs **only for NAMED people** (unnamed clusters are ignored — with 152 clusters,
+almost all are festival strangers; the rename step is a one-time ~10 min human
+pass). For each named person with fewer than `min_shots_per_person` (default 1)
+*flattering* appearances among the selected (flattering ≈ face_quality ≥ q and
+eyes_open ≥ e and not blink):
+- find their best flattering shot **from a scene not already represented** (never
+  duplicate a scene just to cover a person — this is what a naive coverage pass got
+  wrong);
+- swap it for the **weakest selected** pick in its bucket **iff** the score cost
+  ≤ `max_swap_cost` (a within-bucket swap preserves the quota, so floors hold);
 - If no acceptable swap: **record an unmet-coverage warning** (don't force it).
 
 ### 5.7 Output
@@ -233,7 +241,7 @@ For each named person (rename step is a one-time human ~10 min) with fewer than
   "min_per_event": 1,
   "scene_gap_minutes": 45,
   "merge_cos": 0.82, "split_silhouette": 0.55,
-  "dedup": { "phash_max": 8, "dup_cos": 0.90, "same_moment_minutes": 3 },
+  "dedup": { "phash_max": 8, "scene_cos": 0.90, "same_scene_minutes": 5 },
   "rank_weights": { "aggregate": 0.30, "aesthetic": 0.28, "composition": 0.18, "face_quality": 0.24 },
   "day_weight_exponent": 0.6, "event_weight_exponent": 0.7,
   "coverage": { "min_shots_per_person": 1, "min_face_quality": 6.0, "min_eyes_open": 0.5, "max_swap_cost": 1.5 },
