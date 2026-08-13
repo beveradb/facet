@@ -253,15 +253,22 @@ All tunable per album/trip → genericity requirement satisfied.
   ~150 spread by day/location, coverage report, and eyeball the contact sheet.
 
 ## 8. Build order (phased)
-1. `datasource` + `geocode` + `contributors` (+ tests) — enrichment proven on real DB.
-2. `bucketing` + `dedup` (+ tests) — the core, inspected on the sample.
-3. `allocate` + `rank` (+ tests) — end-to-end candidates.json on the sample.
-4. `coverage` (+ tests).
-5. `emit` (contact sheet) + `writeback` (album) — review the 150 in facet.
-6. Full-DB integration pass + tuning.
-7. **Integration:** `api/routers/curator.py` + Angular "Curate" action & review view.
-8. `export` step for Google re-upload.
-9. (v2) video frame-sampling.
+
+Progress (2026-08-12 prototype): **1–5, 8, config + 23 tests DONE**; **6 in progress**
+(running curator on the full 787-photo DB); **7, 9 pending**.
+
+1. ✅ `datasource` + `geocode` + `contributors` (+ tests) — enrichment on real DB.
+2. ✅ `bucketing` + `dedup` (+ tests) — the core, inspected on the sample.
+3. ✅ `allocate` + `rank` (+ tests) — end-to-end candidates.json on the sample.
+4. ✅ `coverage` (+ tests).
+5. ✅ `emit` (contact sheet) + `writeback` (album).
+6. ⏳ Full-DB integration pass + tuning.
+7. ⬜ **Integration:** `api/routers/curator.py` + Angular "Curate" action & review view.
+8. ✅ `export` step for Google re-upload (`curate.py export`).
+9. ⬜ (v2) video frame-sampling.
+
+Also done beyond the original plan: `curator/config.py` (per-album tuning via the
+`scoring_config.json` `curator` block) and `docs/CURATOR.md` (user-facing doc).
 
 ## 9. Open questions for Andrew (non-blocking; sensible defaults chosen)
 - **Significance weighting:** should festival days be weighted above transit days
