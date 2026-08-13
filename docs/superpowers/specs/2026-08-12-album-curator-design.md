@@ -290,6 +290,41 @@ Progress (2026-08-12 prototype): **1–5, 8, config + 23 tests DONE**; **6 in pr
 Also done beyond the original plan: `curator/config.py` (per-album tuning via the
 `scoring_config.json` `curator` block) and `docs/CURATOR.md` (user-facing doc).
 
+## 9b. 9c implementation plan — videos compete in the auto-selection
+
+Builds on the shipped review UI's as-built contract
+([`2026-08-13-curator-ui-completion.md`](2026-08-13-curator-ui-completion.md) §4):
+the UI already renders any pool item whose `.path` is a video extension as a clip,
+so 9c is engine-side + two tiny router edits.
+
+1. **Video → synthetic `Photo`.** `Photo` gains `is_video: bool=False` and
+   `duration: float|None=None`. A new `curator/video.py` loader turns each
+   `VideoSummary` (from `videos.json`) into a `Photo`: `path`=clip path (video
+   ext → UI badges it), `dt`, `caption`, `category`, `moment` from the summary,
+   `img_emb`=mean frame embedding (so it dedups against stills of the same
+   moment), `aggregate`/`aesthetic` from frames, `emb=None`, `lat/lon=None`.
+2. **Injection.** `curate(db_path, cfg, videos_json=None)` appends the video
+   `Photo`s to the loaded stills before enrichment, so they flow through
+   contributors → **location (GPS-nearest-in-time)** → bucketing (their day/event)
+   → **dedup** → allocation → rank → coverage unchanged.
+3. **Quota — "worth more than a still, but capped."** A video gets a rank bonus
+   (`video_score_bonus`, so a good clip out-ranks a marginal still in its bucket)
+   AND a global cap `video_max` (default **~15**): after selection, videos beyond
+   the cap (lowest first) are unselected and their bucket backfilled with the next
+   still. *(This `video_max` default is the one open call — see §9.)*
+4. **Thumbnails (router, ~1 line + a route).** Keyframes are stored in a
+   curator-owned side table `curator_video_thumbs(path TEXT PRIMARY KEY, thumbnail
+   BLOB)` (populated by the video-analysis step). Add `GET /api/curator/video_thumb
+   ?path=` serving that BLOB, and branch `_thumb_url()` on `_item_type(path)`.
+   Set `"duration": rep.duration` in `_build_pool`. No `photos` rows for videos
+   (keeps the table rescan-safe).
+5. **Album/export.** `save_album` may include video paths; the facet **gallery
+   can't render clips**, so the deliverable path for videos stays the **export**
+   (`export --add-videos` already copies them). Note this limitation in the UI
+   later; for now the kept video set flows to export.
+6. **Config:** `curator.video.{max, score_bonus}` in `scoring_config.json`. Tests
+   on synthetic summaries + a real-data pass once `videos.json` lands.
+
 ## 9. Open questions for Andrew (non-blocking; sensible defaults chosen)
 - **Significance weighting:** should festival days be weighted above transit days
   explicitly, or is sub-linear count weighting + floor enough? (Default: count-only.)
