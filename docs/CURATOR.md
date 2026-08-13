@@ -67,6 +67,30 @@ python curate.py run --db library.db \
 python curate.py export --db library.db --album "Curated Candidates" --dest ./curated_out
 ```
 
+## Videos
+
+facet is stills-only, so videos are handled separately. Each clip is
+**frame-sampled** (a few keyframes across its duration), those frames run through
+facet's normal image pipeline, and the results are rolled up into a **per-video
+content summary** (representative caption, category, moment, quality, a best
+keyframe). Live-Photo `.MOV` companions of stills are excluded automatically.
+
+```bash
+# 1. Analyze clips -> videos.json (extracts keyframes, runs facet on them, aggregates)
+python analyze_videos.py                     # (album dir configured inside the script)
+# 2. Build the day-grouped picker; open it, click the clips you want, Download selection
+python curate.py videos --videos-json videos.json --out video_picker.html
+# 3. Export stills + chosen videos together
+python curate.py export --db library.db --album "Curated Candidates" --dest ./out \
+    --add-videos videos_selected.txt
+```
+
+**Planned (roadmap 9c):** videos will also *compete in the auto-selection* — each
+clip enters the same bucket → quota → rank → dedup pipeline as a synthetic
+candidate (date from mtime, location from GPS-nearest, mean-frame embedding,
+aggregated caption/score), with a video quota that values a clip above a single
+still while capping videos so they don't crowd out stills.
+
 ## CLI
 
 | Command | Purpose |
