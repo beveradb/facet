@@ -85,6 +85,22 @@ class TestRun:
         assert resp.status_code == 200
         assert resp.json()["count"] == len(_PHOTOS)
 
+    def test_rerun_preserves_user_edits(self, client):
+        """A second run refreshes the pool WITHOUT clobbering edits.
+
+        Guards the ``INSERT OR IGNORE`` seeding — a switch to ``INSERT OR
+        REPLACE`` would silently re-select an item the user un-ticked.
+        """
+        client.post("/api/curator/run")
+        client.post("/api/curator/toggle", json={"id": "/lib/d1a.jpg", "selected": False})
+
+        rerun = client.post("/api/curator/run").json()
+        assert rerun["selected_count"] == len(_PHOTOS) - 1
+        toggled = next(
+            it for b in rerun["buckets"] for it in b["items"] if it["id"] == "/lib/d1a.jpg"
+        )
+        assert toggled["selected"] is False
+
     def test_run_requires_edition(self, regular_client):
         assert regular_client.post("/api/curator/run").status_code == 403
 
@@ -184,3 +200,36 @@ class TestSaveAlbum:
     def test_save_requires_edition(self, regular_client):
         resp = regular_client.post("/api/curator/save_album", json={"name": "X"})
         assert resp.status_code == 403
+
+
+class TestPoolHelpers:
+    """Pure-function coverage of the overlay + item-type logic — the branches the
+    full run/toggle flow can't cheaply reach (a partial auto-selection needs a
+    120+ photo pool; a video candidate needs the not-yet-shipped 9c engine)."""
+
+    def test_is_selected_overlay(self):
+        from api.routers.curator import _is_selected
+
+        auto_on = {"id": "/p/a.jpg", "auto_selected": True}
+        auto_off = {"id": "/p/b.jpg", "auto_selected": False}
+
+        # No user row → the engine's auto value stands.
+        assert _is_selected(auto_on, {}) is True
+        assert _is_selected(auto_off, {}) is False       # the "not selected" render path
+        # A user edit overrides the auto value in either direction.
+        assert _is_selected(auto_on, {"/p/a.jpg": 0}) is False   # un-ticked an auto pick
+        assert _is_selected(auto_off, {"/p/b.jpg": 1}) is True   # added a non-auto candidate
+
+    def test_item_type_detects_video(self):
+        from api.routers.curator import _item_type
+
+        assert _item_type("/lib/IMG_1.jpg") == "photo"
+        assert _item_type("/lib/clip.mp4") == "video"
+        assert _item_type("/lib/CLIP.MOV") == "video"      # case-insensitive
+        assert _item_type("/lib/no_extension") == "photo"
+
+    def test_thumb_url_encodes_path(self):
+        from api.routers.curator import _thumb_url
+
+        url = _thumb_url("/lib/a b&c.jpg")
+        assert url == "/thumbnail?path=%2Flib%2Fa%20b%26c.jpg&size=320"
