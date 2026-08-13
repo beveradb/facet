@@ -24,6 +24,7 @@ from curator.exporter import export_album
 from curator.geocode import assign_contributors, assign_locations
 from curator.rank import photo_score, pick_bucket
 from curator.select import CurationResult, _coverage_pass
+from curator.writeback import write_album
 
 BASE = datetime(2026, 7, 22, 12, 0, 0)
 
@@ -257,6 +258,9 @@ def tiny_db(tmp_path):
         caption_embedding BLOB, camera_model TEXT, thumbnail BLOB)""")
     conn.execute("CREATE TABLE faces (photo_path TEXT, person_id INT)")
     conn.execute("CREATE TABLE persons (id INT, name TEXT)")
+    conn.execute("CREATE TABLE albums (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, description TEXT)")
+    conn.execute("CREATE TABLE album_photos (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                 "album_id INT, photo_path TEXT, position INT)")
     for i in range(6):
         day = 22 + (i // 3)
         conn.execute(
@@ -307,6 +311,20 @@ def test_export_album_copies_survivors_and_skips_rejected(tmp_path):
     assert m["exported"] == 1 and m["skipped_rejected"] == 1
     assert (dest / "a.jpg").exists() and not (dest / "b.jpg").exists()
     assert (dest / "manifest.json").exists() and (dest / "manifest.csv").exists()
+
+
+def test_write_album_is_idempotent(tiny_db):
+    result = curate(tiny_db, CuratorConfig(target_count=4, candidate_multiplier=1.0, min_per_day=1))
+    aid = write_album(tiny_db, "Cand", result.selected)
+    conn = sqlite3.connect(tiny_db)
+    n = conn.execute("SELECT COUNT(*) FROM album_photos WHERE album_id=?", (aid,)).fetchone()[0]
+    conn.close()
+    assert n == len(result.selected)
+    write_album(tiny_db, "Cand", result.selected)          # re-run replaces, not duplicates
+    conn = sqlite3.connect(tiny_db)
+    albums = conn.execute("SELECT COUNT(*) FROM albums WHERE name='Cand'").fetchone()[0]
+    conn.close()
+    assert albums == 1
 
 
 def test_contact_sheet_renders(tiny_db, tmp_path):

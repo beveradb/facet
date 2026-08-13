@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from collections import defaultdict
 
@@ -26,6 +25,7 @@ from curator.config import load_config
 from curator.emit import write_contact_sheet
 from curator.exporter import export_album
 from curator.rank import photo_score
+from curator.writeback import write_album
 
 
 def _summary(result, cfg) -> dict:
@@ -46,27 +46,6 @@ def _summary(result, cfg) -> dict:
         "selected_by_location": dict(sorted(by_loc.items(), key=lambda kv: -kv[1])),
         "coverage_warnings": result.coverage_warnings,
     }
-
-
-def _write_album(db_path: str, name: str, result) -> int:
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute("DELETE FROM album_photos WHERE album_id IN (SELECT id FROM albums WHERE name=?)", (name,))
-        conn.execute("DELETE FROM albums WHERE name=?", (name,))
-        cur = conn.execute(
-            "INSERT INTO albums (name, description) VALUES (?, ?)",
-            (name, f"Auto-curated candidates ({len(result.selected)} items)"),
-        )
-        album_id = cur.lastrowid
-        ordered = sorted(result.selected, key=lambda p: (p.day or "", p.dt or 0))
-        conn.executemany(
-            "INSERT INTO album_photos (album_id, photo_path, position) VALUES (?, ?, ?)",
-            [(album_id, p.path, i) for i, p in enumerate(ordered)],
-        )
-        conn.commit()
-        return album_id
-    finally:
-        conn.close()
 
 
 def cmd_run(args) -> int:
@@ -112,7 +91,7 @@ def cmd_run(args) -> int:
         print(f"  contact sheet -> {args.contact_sheet}")
 
     if args.write_album:
-        album_id = _write_album(args.db, args.write_album, result)
+        album_id = write_album(args.db, args.write_album, result.selected)
         print(f"  wrote facet album '{args.write_album}' (id={album_id}, {len(result.selected)} photos)")
     return 0
 
