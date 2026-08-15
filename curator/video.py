@@ -193,40 +193,91 @@ def aggregate_summaries(frames_db: str, videos: list[VideoMeta]) -> list[VideoSu
     return sorted(out, key=lambda s: (s.day or "", s.dt or datetime.min))  # noqa: DTZ901
 
 
+def _summary_to_photo(s: dict, img_emb):
+    """Build a synthetic video Photo from a summary dict + its image embedding."""
+    from .datasource import Photo
+
+    dt = None
+    if s.get("dt"):
+        try:
+            dt = datetime.fromisoformat(str(s["dt"]))
+        except ValueError:
+            dt = None
+    aes = float(s.get("aesthetic") or 0.0)
+    return Photo(
+        path=s["path"], filename=s.get("filename", ""), dt=dt,
+        lat=None, lon=None, category=s.get("category"),
+        aggregate=float(s.get("aggregate") or 0.0), aesthetic=aes, comp=aes,
+        face_quality=0.0, face_ratio=0.0, eyes_open=1.0, expression=0.5,
+        is_blink=0, is_rejected=0, is_junk=False, is_dup_lead=0,
+        duplicate_group_id=None, burst_group_id=None, phash=None,
+        caption=s.get("caption"), moment=s.get("moment") or "other", moment_conf=0.5,
+        emb=None, img_emb=img_emb, camera=None,
+        is_video=True, duration=s.get("duration"),
+    )
+
+
 def load_video_candidates(videos_json_path: str):
-    """Build synthetic Photo candidates from a videos.json (aggregate_summaries output),
+    """Synthetic Photo candidates from a videos.json (aggregate_summaries output),
     so clips flow through the same selection pipeline as stills (roadmap 9c)."""
     import json
 
     import numpy as np
 
-    from .datasource import Photo
-
     data = json.loads(Path(videos_json_path).read_text())
     out = []
     for s in data:
-        dt = None
-        if s.get("dt"):
-            try:
-                dt = datetime.fromisoformat(str(s["dt"]))
-            except ValueError:
-                dt = None
         mean_emb = s.get("mean_emb") or []
         img_emb = np.asarray(mean_emb, dtype=np.float32) if mean_emb else None
-        aes = float(s.get("aesthetic") or 0.0)
-        out.append(
-            Photo(
-                path=s["path"], filename=s.get("filename", ""), dt=dt,
-                lat=None, lon=None, category=s.get("category"),
-                aggregate=float(s.get("aggregate") or 0.0), aesthetic=aes, comp=aes,
-                face_quality=0.0, face_ratio=0.0, eyes_open=1.0, expression=0.5,
-                is_blink=0, is_rejected=0, is_junk=False, is_dup_lead=0,
-                duplicate_group_id=None, burst_group_id=None, phash=None,
-                caption=s.get("caption"), moment=s.get("moment") or "other", moment_conf=0.5,
-                emb=None, img_emb=img_emb, camera=None,
-                is_video=True, duration=s.get("duration"),
-            )
+        out.append(_summary_to_photo(s, img_emb))
+    return out
+
+
+def store_video_candidates(db_path: str, summaries: list[dict]) -> int:
+    """Persist video candidates into the DB so `curate()` (and the review API) can
+    fold clips in without needing the videos.json file path."""
+    import json
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS curator_video_candidates ("
+            "  path TEXT PRIMARY KEY, summary TEXT NOT NULL)"
         )
+        conn.execute("DELETE FROM curator_video_candidates")
+        conn.executemany(
+            "INSERT INTO curator_video_candidates (path, summary) VALUES (?, ?)",
+            [(s["path"], json.dumps(s)) for s in summaries if s.get("path")],
+        )
+        conn.commit()
+        return conn.total_changes
+    finally:
+        conn.close()
+
+
+def load_video_candidates_from_db(db_path: str):
+    """Synthetic video Photos from the curator_video_candidates table (empty list
+    if the table is absent — so stills-only DBs are unaffected)."""
+    import json
+    import sqlite3
+
+    import numpy as np
+
+    conn = sqlite3.connect(db_path)
+    try:
+        try:
+            rows = conn.execute("SELECT summary FROM curator_video_candidates").fetchall()
+        except sqlite3.OperationalError:
+            return []  # table not created yet
+    finally:
+        conn.close()
+    out = []
+    for (blob,) in rows:
+        s = json.loads(blob)
+        mean_emb = s.get("mean_emb") or []
+        img_emb = np.asarray(mean_emb, dtype=np.float32) if mean_emb else None
+        out.append(_summary_to_photo(s, img_emb))
     return out
 
 

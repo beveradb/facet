@@ -29,6 +29,8 @@ from curator.video import (
     discover_videos,
     keyframe_times,
     load_video_candidates,
+    load_video_candidates_from_db,
+    store_video_candidates,
     video_id_from_frame,
     write_video_picker,
 )
@@ -319,6 +321,24 @@ def test_load_video_candidates(tmp_path):
     p = vids[0]
     assert p.is_video and p.duration == 12.0 and p.path == "/v/a.mp4"
     assert p.moment == "nightlife" and p.dt is not None and p.img_emb is not None
+
+
+def test_store_and_load_video_candidates_from_db(tmp_path):
+    db = tmp_path / "vc.db"
+    sqlite3.connect(db).close()
+    summaries = [{"path": "/v/a.mp4", "filename": "a.mp4", "dt": "2026-07-24 22:00:00",
+                  "duration": 12.0, "caption": "c", "category": "concert", "moment": "nightlife",
+                  "aggregate": 7.0, "aesthetic": 6.0, "mean_emb": [1.0, 0.0]}]
+    store_video_candidates(str(db), summaries)
+    vids = load_video_candidates_from_db(str(db))
+    assert len(vids) == 1 and vids[0].is_video and vids[0].path == "/v/a.mp4"
+    assert vids[0].duration == 12.0 and vids[0].img_emb is not None
+
+
+def test_load_video_candidates_from_db_absent_table_is_empty(tmp_path):
+    db = tmp_path / "empty.db"
+    sqlite3.connect(db).close()
+    assert load_video_candidates_from_db(str(db)) == []   # no table -> graceful []
 
 
 def test_video_score_bonus_outranks_equal_still():

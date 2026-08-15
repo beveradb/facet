@@ -140,9 +140,16 @@ def curate(
     photos = [p for p in all_photos if not p.is_junk and not p.is_rejected]
 
     # 9c: fold video clips in as synthetic candidates so they compete for slots.
-    if videos_json:
-        from .video import load_video_candidates
-        photos = photos + load_video_candidates(videos_json)
+    # An explicit videos.json wins; otherwise pick up clips stored in the DB (so
+    # the review API includes videos without knowing a file path). Stills-only
+    # DBs have no table and get an empty list.
+    from .video import load_video_candidates, load_video_candidates_from_db
+    video_candidates = (
+        load_video_candidates(videos_json) if videos_json
+        else load_video_candidates_from_db(db_path)
+    )
+    if video_candidates:
+        photos = photos + video_candidates
 
     contributors, reference = geocode.assign_contributors(photos)
     locations = geocode.assign_locations(photos)
