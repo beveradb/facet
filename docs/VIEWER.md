@@ -1151,6 +1151,25 @@ Interactive API documentation is available at `/api/docs` (Swagger UI) and the O
 | `GET /api/shared/album/{id}/picks` | Client reads their own picks (proofing session) |
 | `GET /api/albums/{id}/picks` | `[Edition]` Owner reads all client picks for the album |
 
+### Curator
+
+The review surface for the [Album Curator](CURATOR.md) — hand-edit the auto-curated
+selection (grouped day → event) and save it as an album. Human edits live in the
+`curator_selection` side table (`photo_path` → `kept`), never on `photos` (which is
+rewritten on rescan); the structural pool is cached in `curator_pool_cache` so only
+`run` is expensive.
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/curator/run` | `[Edition]` Run the curator, cache the candidate pool, and seed `curator_selection` with the auto-selection (`INSERT OR IGNORE`, so existing edits are preserved). Returns the same payload as `GET /candidates` |
+| `GET /api/curator/candidates` | Candidate pool grouped by day → event, with the user's kept set overlaid over the auto-selection, a running `selected_count`, and `needs_run` (true until the pool has been computed once) |
+| `POST /api/curator/toggle` | `[Edition]` Tick/untick one candidate (`{id, selected}`); upserts `curator_selection`, returns `{id, selected, selected_count}` |
+| `POST /api/curator/save_album` | `[Edition]` (Re)create a facet album from the kept set, chronologically ordered (idempotent by name). Returns `{album_id, count}` |
+
+Items are keyed by `photos.path`; each carries a ready `thumb` URL
+(`/thumbnail?path=…&size=320`) and a `type` (`photo`/`video`) so clips render with a
+duration badge once video-as-candidate lands. UI at `/curator`.
+
 ### Memories, Timeline, Map & Captions
 
 | Endpoint | Description |

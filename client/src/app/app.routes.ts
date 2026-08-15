@@ -68,6 +68,12 @@ export const routes: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: 'curator',
+    loadComponent: () =>
+      import('./features/curator/curator.component').then(m => m.CuratorComponent),
+    canActivate: [authGuard],
+  },
+  {
     path: 'capsules',
     loadComponent: () =>
       import('./features/capsules/capsules.component').then(m => m.CapsulesComponent),
