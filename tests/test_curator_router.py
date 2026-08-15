@@ -13,6 +13,7 @@ import sqlite3
 
 import pytest
 
+from api.routers.curator import _item_type, _thumb_url
 from db import DEFAULT_DB_PATH
 
 
@@ -233,3 +234,36 @@ class TestPoolHelpers:
 
         url = _thumb_url("/lib/a b&c.jpg")
         assert url == "/thumbnail?path=%2Flib%2Fa%20b%26c.jpg&size=320"
+
+
+# --- Video candidates (9c): thumbnail routing ---
+
+def _seed_video_thumb(path, data=b"\xff\xd8KEYFRAME"):
+    conn = sqlite3.connect(DEFAULT_DB_PATH)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS curator_video_thumbs (path TEXT PRIMARY KEY, thumbnail BLOB)"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO curator_video_thumbs (path, thumbnail) VALUES (?, ?)",
+            (path, data),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_thumb_url_branches_photo_vs_video():
+    assert _thumb_url("/lib/a.jpg").startswith("/thumbnail?")
+    assert _thumb_url("/lib/clip.mp4").startswith("/api/curator/video_thumb?")
+    assert _item_type("/lib/clip.MOV") == "video" and _item_type("/lib/a.jpg") == "photo"
+
+
+def test_video_thumb_serves_keyframe_and_404s(anonymous_client):
+    _seed_video_thumb("/lib/clip.mp4", b"\xff\xd8KEYFRAME")
+    ok = anonymous_client.get("/api/curator/video_thumb", params={"path": "/lib/clip.mp4"})
+    assert ok.status_code == 200
+    assert ok.content == b"\xff\xd8KEYFRAME"
+    assert ok.headers["content-type"] == "image/jpeg"
+    missing = anonymous_client.get("/api/curator/video_thumb", params={"path": "/lib/nope.mp4"})
+    assert missing.status_code == 404

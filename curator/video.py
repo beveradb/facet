@@ -230,6 +230,33 @@ def load_video_candidates(videos_json_path: str):
     return out
 
 
+def store_video_thumbs(db_path: str, summaries: list[dict]) -> int:
+    """Persist each clip's best keyframe (JPEG bytes) into `curator_video_thumbs`
+    keyed by the clip path, so the curator API can serve `/api/curator/video_thumb`
+    for video candidates (which have no `photos.thumbnail` row)."""
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS curator_video_thumbs "
+            "(path TEXT PRIMARY KEY, thumbnail BLOB)"
+        )
+        n = 0
+        for s in summaries:
+            bf, path = s.get("best_frame"), s.get("path")
+            if bf and path and Path(bf).exists():
+                conn.execute(
+                    "INSERT OR REPLACE INTO curator_video_thumbs (path, thumbnail) VALUES (?, ?)",
+                    (path, Path(bf).read_bytes()),
+                )
+                n += 1
+        conn.commit()
+        return n
+    finally:
+        conn.close()
+
+
 def _fmt_dur(sec: float) -> str:
     sec = int(sec)
     return f"{sec // 60}:{sec % 60:02d}" if sec >= 60 else f"{sec}s"

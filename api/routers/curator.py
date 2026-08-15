@@ -23,7 +23,7 @@ import os
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from api.auth import CurrentUser, get_optional_user, require_edition
@@ -68,6 +68,14 @@ def _init_tables(conn) -> None:
         "  created_at TEXT DEFAULT (datetime('now'))"
         ")"
     )
+    # Populated by the video-analysis step (curator.video.store_video_thumbs); the
+    # video_thumb route serves keyframes from here for clip candidates.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS curator_video_thumbs ("
+        "  path TEXT PRIMARY KEY,"
+        "  thumbnail BLOB"
+        ")"
+    )
 
 
 # --- Pool construction ---
@@ -77,6 +85,9 @@ def _item_type(path: str) -> str:
 
 
 def _thumb_url(path: str) -> str:
+    # Video candidates have no photos.thumbnail row; serve their stored keyframe.
+    if _item_type(path) == "video":
+        return f"/api/curator/video_thumb?path={quote(path, safe='')}"
     return f"/thumbnail?path={quote(path, safe='')}&size=320"
 
 
@@ -104,7 +115,7 @@ def _build_pool(result, cfg: CuratorConfig) -> dict:
                 "category": rep.category,
                 "moment": rep.moment,
                 "score": round(rep.aggregate, 1),
-                "duration": None,
+                "duration": rep.duration,
                 "auto_selected": pick is not None,
             })
         total += len(items)
@@ -226,6 +237,22 @@ def get_candidates(user: Optional[CurrentUser] = Depends(get_optional_user)):
     with get_db() as conn:
         _init_tables(conn)
         return _candidates_payload(conn)
+
+
+@router.get("/api/curator/video_thumb")
+def video_thumb(path: str, user: Optional[CurrentUser] = Depends(get_optional_user)):
+    """Serve a video candidate's stored keyframe JPEG (curator_video_thumbs)."""
+    with get_db() as conn:
+        _init_tables(conn)
+        row = conn.execute(
+            "SELECT thumbnail FROM curator_video_thumbs WHERE path = ?", (path,)
+        ).fetchone()
+    if row is None or row["thumbnail"] is None:
+        raise HTTPException(status_code=404, detail="no keyframe for this clip")
+    return Response(
+        content=row["thumbnail"], media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.post("/api/curator/toggle")
